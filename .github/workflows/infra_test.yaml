@@ -1,0 +1,75 @@
+name: Algorithm CI
+
+on:
+  push:
+    branches: [ "main"]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  # 1. Setup Infrastructure
+  infra_setup:
+    strategy:
+      matrix:
+        config:
+          - python_version: '3.11'
+            vantage6_version: 'latest'
+          - python_version: '3.12'
+            vantage6_version: '4.8.2'
+    uses: mdw-nl/v6-infrastructure-sh/.github/workflows/infrastructure-setup-workflow.yml@feature/algorithm-ci
+    with:
+      environment: "CI"
+      python_version: ${{ matrix.config.python_version }}
+      vantage6_version: ${{ matrix.config.vantage6_version }}
+
+  # 2. Run Infrastructure Tests (if you have any test scripts in an infrastructure_tests directory)
+  infra_tests:
+    needs: infra_setup
+    strategy:
+      matrix:
+        config:
+          - python_version: '3.11'
+            vantage6_version: 'latest'
+          - python_version: '3.12'
+            vantage6_version: '4.8.2'
+    uses: mdw-nl/v6-infrastructure-sh/.github/workflows/infrastructure-tests-workflow.yml@feature/algorithm-ci
+    with:
+      environment: "CI"
+      python_version: ${{ matrix.config.python_version }}
+      vantage6_version: ${{ matrix.config.vantage6_version }}
+
+  # 3. Run Algorithm-Specific Python Tests
+  algorithm_tests:
+    needs: [infra_setup, infra_tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set Up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: 3.11
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Python Tests
+        run: python -m unittest discover -s tests
+
+# 4. Shutdown Infrastructure using the reusable workflow from the infra repo
+  infra_shutdown:
+    needs: [infra_setup, infra_tests, algorithm_tests]
+    strategy:
+      matrix:
+        config:
+          - python_version: '3.11'
+            vantage6_version: 'latest'
+          - python_version: '3.12'
+            vantage6_version: '4.8.2'
+    uses: mdw-nl/v6-infrastructure-sh/.github/workflows/infrastructure-shutdown-workflow.yml@feature/algorithm-ci
+    with:
+      environment: "CI"
+      python_version: ${{ matrix.config.python_version }}
+      vantage6_version: ${{ matrix.config.vantage6_version }}
