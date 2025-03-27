@@ -8,7 +8,7 @@ def unique_patients(df: pd.DataFrame, id_column="pat_ID"):
     1. Unique Patients Per Center:
        Count the number of unique patient IDs.
     """
-    return df[id_column].nunique()
+    return int(df[id_column].nunique())
 
 def check_visit_definition(df: pd.DataFrame):
     """
@@ -30,18 +30,17 @@ def check_visit_definition(df: pd.DataFrame):
     invalid_count = 0
 
     for pat_id, group in df.groupby("pat_ID"):
-        # Sort visits in chronological order
         group = group.sort_values("Visit_months_from_diagnosis").reset_index(drop=True)
         for i in range(1, len(group)):
             current = group.iloc[i]
             previous = group.iloc[i - 1]
-            # Compare DMARD-related columns (only those that exist in the data)
+            # TODO: address None issue - what if all records are equal or None?
             dmard_unchanged = all(current[col] == previous[col] for col in dmard_cols if col in group.columns)
-            # Check that all disease activity variables are missing (NaN or empty string)
             disease_missing = all(pd.isna(current[col]) or current[col] == "" for col in disease_activity_cols if col in group.columns)
             if dmard_unchanged and disease_missing:
                 invalid_count += 1
-    return invalid_count
+    return {"invalid_visits": invalid_count}
+
 
 def visits_per_time_period(df: pd.DataFrame):
     """
@@ -52,8 +51,7 @@ def visits_per_time_period(df: pd.DataFrame):
            using 'Visit_months_from_diagnosis').
          - Visit rate = (number of visits) / (total follow-up time).
        
-       Returns a tuple:
-         - A DataFrame with per-patient results.
+       Returns:
          - A dictionary of overall descriptive statistics (mean and standard deviation) of the visit rate.
     """
     results = []
@@ -62,18 +60,19 @@ def visits_per_time_period(df: pd.DataFrame):
         visits_count = len(group)
         min_visit = group["Visit_months_from_diagnosis"].min()
         max_visit = group["Visit_months_from_diagnosis"].max()
-        # Only compute follow-up if more than one visit is present
         total_follow_up = max_visit - min_visit if visits_count > 1 else np.nan
         rate = visits_count / total_follow_up if total_follow_up and total_follow_up > 0 else np.nan
-        results.append({
-            "pat_ID": pat_id, 
-            "visits_count": visits_count, 
-            "total_follow_up": total_follow_up, 
-            "visit_rate": rate
-        })
-    result_df = pd.DataFrame(results)
-    overall_stats = result_df["visit_rate"].agg(["mean", "std"]).to_dict()
-    return result_df, overall_stats
+        results.append(rate)
+    rates = pd.Series(results).dropna()
+    overall_stats = {
+        "visit_rate_mean": round(rates.mean(), 3) if not rates.empty else None,
+        "visit_rate_std": round(rates.std(), 3) if not rates.empty else None,
+        "visit_rate_median": round(rates.median(), 3) if not rates.empty else None,
+        # Q: do we need to return the counts again as we did it above?
+        "total_patients": int(df["pat_ID"].nunique())
+    }
+    return overall_stats
+
 
 def missing_data_per_visit(df: pd.DataFrame):
     """
@@ -87,11 +86,17 @@ def missing_data_per_visit(df: pd.DataFrame):
          - The percentage of such visits.
     """
     cols = ["DAS28", "ESR", "CRP", "TJC28", "SJC28", "Pat_global", "Ph_global", "Pain"]
-    df["all_missing"] = df[cols].apply(lambda row: all(pd.isna(x) or x == "" for x in row), axis=1)
-    count_missing = df["all_missing"].sum()
+    # Create a temporary flag column to check if all are missing
+    all_missing = df[cols].apply(lambda row: all(pd.isna(x) or x == "" for x in row), axis=1)
+    count_missing = all_missing.sum()
     total = len(df)
-    percent_missing = (count_missing / total) * 100 if total > 0 else 0
-    return {"count_all_missing": int(count_missing), "total_visits": total, "percent_all_missing": percent_missing}
+    percent_missing = round((count_missing / total) * 100, 2) if total > 0 else 0
+    return {
+        "count_all_missing": int(count_missing),
+        "total_visits": total,
+        "percent_all_missing": percent_missing
+    }
+
 
 def demographics_stats(df: pd.DataFrame):
     """
@@ -103,16 +108,17 @@ def demographics_stats(df: pd.DataFrame):
        Returns a dictionary of computed statistics.
     """
     results = {}
-    # For Age (or Age_diagnosis if available)
+    # Continuous variable: Age
     if "Age" in df.columns:
-        results["Age_mean"] = df["Age"].mean()
-        results["Age_std"] = df["Age"].std()
-    # For categorical variables
+        results["Age_mean"] = round(df["Age"].mean(), 2)
+        results["Age_std"] = round(df["Age"].std(), 2)
+    # Categorical variables
     for var in ["Sex", "RF_positivity", "anti_CCP"]:
+        # Q: maybe it is unsafe to display count here as they can disclose patient-level data?
         if var in df.columns:
             counts = df[var].value_counts(dropna=False)
             total = counts.sum()
-            proportions = (counts / total).to_dict()
+            proportions = (counts / total).round(3).to_dict()
             results[f"{var}_counts"] = counts.to_dict()
             results[f"{var}_proportions"] = proportions
     return results
@@ -126,69 +132,57 @@ def disease_duration_distribution(df: pd.DataFrame):
     if "Year_diagnosis" in df.columns:
         diagnosis_year = pd.to_numeric(df["Year_diagnosis"], errors='coerce')
         return {
-            "Year_diagnosis_mean": diagnosis_year.mean(),
-            "Year_diagnosis_std": diagnosis_year.std(),
-            "Year_diagnosis_skewness": diagnosis_year.skew()
+            "Year_diagnosis_mean": round(diagnosis_year.mean(), 2),
+            "Year_diagnosis_std": round(diagnosis_year.std(), 2),
+            "Year_diagnosis_skewness": round(diagnosis_year.skew(), 2)
         }
     else:
         return {}
 
-def lab_values_stats(df: pd.DataFrame, group_by=False):
-    """
-    7. Laboratory Values:
-       For lab variables (CRP, ESR, TJC28, SJC28, DAS28, Pat_global, Ph_global, Pain),
-       compute descriptive statistics.
-       
-       If group_by is False:
-         - Compute overall descriptive stats (mean, std, skewness).
-         - Identify outliers using the IQR method.
-         
-       If group_by is True:
-         - Group by pat_ID and aggregate the per-patient means (or other second-order statistics)
-           to ensure individual visit details are not exposed.
-       
-       Returns a dictionary of statistics for each lab variable.
-    """
+def lab_values_stats_overall(df: pd.DataFrame):
     lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
     results = {}
-    if not group_by:
-        for var in lab_vars:
-            if var in df.columns:
-                series = pd.to_numeric(df[var], errors='coerce')
-                mean_val = series.mean()
-                std_val = series.std()
-                skewness_val = series.skew()
-                # Identify outliers using IQR
-                Q1 = series.quantile(0.25)
-                Q3 = series.quantile(0.75)
-                IQR = Q3 - Q1
-                lower_bound = Q1 - 1.5 * IQR
-                upper_bound = Q3 + 1.5 * IQR
-                outliers = series[(series < lower_bound) | (series > upper_bound)].tolist()
-                results[var] = {
-                    "mean": mean_val, 
-                    "std": std_val, 
-                    "skewness": skewness_val, 
-                    "outliers": outliers
-                }
-    else:
-        # When grouping, ensure we do not expose visit-level details
-        if "pat_ID" not in df.columns:
-            raise ValueError("Grouping requested but 'pat_ID' column not found.")
-        grouped = df.groupby("pat_ID")
-        for var in lab_vars:
-            if var in df.columns:
-                # Compute per-patient means, then aggregate those values
-                means = grouped[var].mean().dropna()
-                results[var] = {
-                    "count": int(means.count()),
-                    "mean": means.mean(),
-                    "std": means.std(),
-                    "median": means.median(),
-                    "25%": means.quantile(0.25),
-                    "75%": means.quantile(0.75)
-                }
+    for var in lab_vars:
+        if var in df.columns:
+            series = pd.to_numeric(df[var], errors='coerce')
+            mean_val = series.mean()
+            std_val = series.std()
+            skewness_val = series.skew()
+            # Identify outliers using the IQR method
+            Q1 = series.quantile(0.25)
+            Q3 = series.quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            outliers = series[(series < lower_bound) | (series > upper_bound)].tolist()
+            results[var] = {
+                "mean": round(mean_val, 2),
+                "std": round(std_val, 2),
+                "skewness": round(skewness_val, 2),
+                "outlier_count": len(outliers)
+            }
     return results
+
+def lab_values_stats_aggregated(df: pd.DataFrame):
+    # This function aggregates lab values by patient then summarizes those aggregates
+    if "pat_ID" not in df.columns:
+        raise ValueError("Grouping requested but 'pat_ID' column not found.")
+    lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
+    grouped = df.groupby("pat_ID")
+    results = {}
+    for var in lab_vars:
+        if var in df.columns:
+            # Compute per-patient means
+            means = grouped[var].mean().dropna()
+            results[var] = {
+                "mean": round(means.mean(), 2),
+                "std": round(means.std(), 2),
+                "median": round(means.median(), 2),
+                "25%": round(means.quantile(0.25), 2),
+                "75%": round(means.quantile(0.75), 2)
+            }
+    return results
+
 
 @data(1)
 def flexible_stats(df: pd.DataFrame, **kwargs):
@@ -207,22 +201,19 @@ def flexible_stats(df: pd.DataFrame, **kwargs):
     """
     unique = unique_patients(df)
     visit_def = check_visit_definition(df)
-    visits_df, visits_overall = visits_per_time_period(df)
+    visits_overall = visits_per_time_period(df)
     missing_data = missing_data_per_visit(df)
-    demo = demographics_stats(df)
+    demographics = demographics_stats(df)
     duration = disease_duration_distribution(df)
-    lab_overall = lab_values_stats(df, group_by=False)
-    lab_grouped = lab_values_stats(df, group_by=True)
+    lab_overall = lab_values_stats_overall(df)
+    lab_grouped = lab_values_stats_aggregated(df)
     
     results = {
         "Unique Patients Per Center": unique,
         "Check Visit Definition (invalid visits count)": visit_def,
-        "Visits Per Time Period": {
-            "per_patient": visits_df.to_dict(orient="records"),
-            "overall_stats": visits_overall
-        },
+        "Visits Per Time Period": visits_overall,
         "Missing Data Per Visit": missing_data,
-        "Demographics": demo,
+        "Demographics": demographics,
         "Disease Duration Distribution": duration,
         "Laboratory Values (Overall)": lab_overall,
         "Laboratory Values (Grouped by pat_ID)": lab_grouped
