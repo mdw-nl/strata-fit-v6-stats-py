@@ -11,7 +11,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 # Here you specify the meta-data of your package. The `name` argument is
 # needed in some other steps.
 setup(
-    name='v6_strata_fit_stats',
+    name='v6_strata_fit_stats_py',
     version="1.0.0",
     description='STRATA-FIT specific statistics through vantage6',
     long_description=long_description,
