@@ -2,20 +2,33 @@ import pandas as pd
 import numpy as np
 from typing import Any, Dict
 
+from .types import (
+    enforce_output_schema,
+    UniquePatientsOutput,
+    VisitDefinitionOutput,
+    VisitsPerTimePeriodOutput,
+    MissingDataPerVisitOutput,
+    DemographicsOutput,
+    DiseaseDurationDistributionOutput,
+    PartialStatsOutput
+)
+
 # Define a privacy threshold: any count below this value is suppressed.
 PRIVACY_THRESHOLD = 5
 
-def unique_patients(df: pd.DataFrame, id_column="pat_ID"):
+@enforce_output_schema(UniquePatientsOutput)
+def unique_patients(df: pd.DataFrame):
     """
     1. Unique Patients Per Center:
        Count the number of unique patient IDs.
        If the count is below the privacy threshold, report "<{threshold}".
     """
-    count = int(df[id_column].nunique())
+    count = int(df["pat_ID"].nunique())
     if count < PRIVACY_THRESHOLD:
         return f"<{PRIVACY_THRESHOLD}"
-    return count
+    return {"unique_patients": count}
 
+@enforce_output_schema(VisitDefinitionOutput)
 def check_visit_definition(df: pd.DataFrame):
     """
     2. Check Visit Definition:
@@ -46,6 +59,7 @@ def check_visit_definition(df: pd.DataFrame):
                 invalid_count += 1
     return {"invalid_visits": invalid_count}
 
+@enforce_output_schema(VisitsPerTimePeriodOutput)
 def visits_per_time_period(df: pd.DataFrame):
     """
     3. Visits Per Time Period:
@@ -58,7 +72,7 @@ def visits_per_time_period(df: pd.DataFrame):
        along with the total patient count.
     """
     results = []
-    for pat_id, group in df.groupby("pat_ID"):
+    for _, group in df.groupby("pat_ID"):
         group = group.sort_values("Visit_months_from_diagnosis")
         visits_count = len(group)
         min_visit = group["Visit_months_from_diagnosis"].min()
@@ -75,6 +89,7 @@ def visits_per_time_period(df: pd.DataFrame):
     }
     return overall_stats
 
+@enforce_output_schema(MissingDataPerVisitOutput)
 def missing_data_per_visit(df: pd.DataFrame):
     """
     4. Missing Data Per Feature:
@@ -121,6 +136,7 @@ def safe_proportions(counts, total, threshold=PRIVACY_THRESHOLD):
             new_props[k] = round(v / total, 3)
     return new_props
 
+@enforce_output_schema(DemographicsOutput)
 def demographics_stats(df: pd.DataFrame):
     """
     5. Demographics:
@@ -145,6 +161,7 @@ def demographics_stats(df: pd.DataFrame):
             results[f"{var}_proportions"] = safe_proportions(counts, total)
     return results
 
+@enforce_output_schema(DiseaseDurationDistributionOutput)
 def disease_duration_distribution(df: pd.DataFrame):
     """
     6. Disease Duration Distribution:
@@ -209,6 +226,7 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
             }
     return results
 
+@enforce_output_schema(PartialStatsOutput)
 def compute_partial_stats(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Aggregates various statistics for the dataset while preserving privacy.
@@ -231,16 +249,16 @@ def compute_partial_stats(df: pd.DataFrame) -> Dict[str, Any]:
     duration = disease_duration_distribution(df)
     lab_overall = lab_values_stats_overall(df)
     lab_grouped = lab_values_stats_aggregated(df)
-    
+
     results = {
-        "Unique Patients Per Center": unique,
-        "Check Visit Definition (invalid visits count)": visit_def,
-        "Visits Per Time Period": visits_overall,
-        "Missing Data Per Visit": missing_data,
-        "Demographics": demographics,
-        "Disease Duration Distribution": duration,
-        "Laboratory Values (Overall)": lab_overall,
-        "Laboratory Values (Grouped by pat_ID)": lab_grouped
+        "unique_patients_per_center": unique,
+        "check_visit_definition": visit_def,
+        "visits_per_time_period": visits_overall,
+        "missing_data_per_visit": missing_data,
+        "demographics": demographics,
+        "disease_duration_distribution": duration,
+        "laboratory_values_overall": lab_overall,
+        "laboratory_values_grouped_by_pat_id": lab_grouped
     }
-    
+
     return results
