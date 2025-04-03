@@ -111,30 +111,25 @@ def missing_data_per_visit(df: pd.DataFrame):
         "percent_all_missing": percent_missing
     }
 
-def safe_counts(counts, threshold=PRIVACY_THRESHOLD):
+def safe_counts_and_proportions_groupwise(counts: Dict[Any, int], threshold=PRIVACY_THRESHOLD):
     """
-    Masks counts below the threshold.
-    For any category with a count lower than the threshold, it returns a string "<{threshold}".
-    """
-    new_counts = {}
-    for k, v in counts.items():
-        if v < threshold:
-            new_counts[k] = f"<{threshold}"
-        else:
-            new_counts[k] = v
-    return new_counts
+    Masks *all* counts and proportions if any group has a count below the threshold.
 
-def safe_proportions(counts, total, threshold=PRIVACY_THRESHOLD):
+    Returns:
+        safe_counts: Dict[Any, Union[int, str]]
+        safe_proportions: Dict[Any, Union[float, str]]
     """
-    Computes proportions for each category, but masks values for categories with count below threshold.
-    """
-    new_props = {}
-    for k, v in counts.items():
-        if v < threshold:
-            new_props[k] = "masked"
-        else:
-            new_props[k] = round(v / total, 3)
-    return new_props
+    if any(v < threshold for v in counts.values()):
+        return (
+            {k: f"<{threshold}" for k in counts},
+            {k: "masked" for k in counts}
+        )
+
+    total = sum(counts.values())
+    safe_counts = {k: v for k, v in counts.items()}
+    safe_proportions = {k: round(v / total, 3) if total > 0 else None for k, v in counts.items()}
+    return safe_counts, safe_proportions
+
 
 @enforce_output_schema(DemographicsOutput)
 def demographics_stats(df: pd.DataFrame):
@@ -156,9 +151,9 @@ def demographics_stats(df: pd.DataFrame):
     for var in ["Sex", "RF_positivity", "anti_CCP"]:
         if var in df.columns:
             counts = df[var].value_counts(dropna=False).to_dict()
-            total = sum(counts.values())
-            results[f"{var}_counts"] = safe_counts(counts)
-            results[f"{var}_proportions"] = safe_proportions(counts, total)
+            safe_counts, safe_proportions = safe_counts_and_proportions_groupwise(counts)
+            results[f"{var}_counts"] = safe_counts
+            results[f"{var}_proportions"] = safe_proportions
     return results
 
 @enforce_output_schema(DiseaseDurationDistributionOutput)
