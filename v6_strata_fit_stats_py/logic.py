@@ -161,16 +161,25 @@ def disease_duration_distribution(df: pd.DataFrame):
     """
     6. Disease Duration Distribution:
        Compute the distribution (mean, std, skewness) of the Year_diagnosis variable.
+       Note: Deduplicates per patient before computing stats.
     """
-    if "Year_diagnosis" in df.columns:
-        diagnosis_year = pd.to_numeric(df["Year_diagnosis"], errors='coerce')
+    if "Year_diagnosis" in df.columns and "pat_ID" in df.columns:
+        # Group by patient and take the first non-null value
+        patient_level = (
+            df.dropna(subset=["Year_diagnosis"])
+              .groupby("pat_ID")["Year_diagnosis"]
+              .first()
+              .apply(pd.to_numeric, errors="coerce")
+              .dropna()
+        )
         return {
-            "Year_diagnosis_mean": round(diagnosis_year.mean(), 2),
-            "Year_diagnosis_std": round(diagnosis_year.std(), 2),
-            "Year_diagnosis_skewness": round(diagnosis_year.skew(), 2)
+            "Year_diagnosis_mean": round(patient_level.mean(), 2),
+            "Year_diagnosis_std": round(patient_level.std(), 2),
+            "Year_diagnosis_skewness": round(patient_level.skew(), 2)
         }
     else:
         return {}
+
 
 def lab_values_stats_overall(df: pd.DataFrame):
     """
