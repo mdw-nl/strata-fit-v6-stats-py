@@ -135,17 +135,17 @@ def safe_counts_and_proportions_groupwise(counts: Dict[Any, int], threshold=PRIV
 def demographics_stats(df: pd.DataFrame):
     """
     5. Demographics:
-       For continuous variables (e.g. Age), compute mean and std.
+       For continuous variables (e.g. Age_diagnosis), compute mean and std.
        For categorical variables (e.g. Sex, RF_positivity, anti_CCP), compute counts and proportions.
        Small counts (below threshold) are suppressed for privacy.
        
        Returns a dictionary of computed statistics.
     """
     results = {}
-    # Continuous variable: Age
-    if "Age" in df.columns:
-        results["Age_mean"] = round(df["Age"].mean(), 2)
-        results["Age_std"] = round(df["Age"].std(), 2)
+    # Continuous variable: Age_diagnosis
+    if "Age_diagnosis" in df.columns:
+        results["Age_mean"] = round(df["Age_diagnosis"].mean(), 2)
+        results["Age_std"] = round(df["Age_diagnosis"].std(), 2)
     
     # Categorical variables
     for var in ["Sex", "RF_positivity", "anti_CCP"]:
