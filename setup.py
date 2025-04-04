@@ -11,16 +11,21 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 # Here you specify the meta-data of your package. The `name` argument is
 # needed in some other steps.
 setup(
-    name='v6_basic_stats_py',
+    name='v6_strata_fit_stats_py',
     version="1.0.0",
-    description='vantage6 basic stats',
+    description='STRATA-FIT specific statistics through vantage6',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/mdw-nl/v6-basic-stats-py',
+    url='https://github.com/mdw-nl/v6-strata-fit-stats-py',
     packages=find_packages(),
     python_requires='>=3.10',
     install_requires=[
         'vantage6-algorithm-tools',
         'pandas'
-    ]
+    ],
+    extras_require={
+        "test": [
+            'vantage6-algorithm-tools==4.8.2',
+        ]
+    }
 )

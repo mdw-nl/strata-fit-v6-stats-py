@@ -7,8 +7,8 @@
 
 --------------------
 
-# v6-basic-stats-py
-Computes basic statistics on datasets via [vantage6](https://vantage6.ai).
+# v6-stata-fit-stats-py
+Computes STRATA-FIT specific statistics on consortium datasets via [vantage6](https://vantage6.ai). To learn more about STRATA-FIT please visit [STRATA-FIT.eu](https://strata-fit.eu/).
 
 
 ------------------------------------

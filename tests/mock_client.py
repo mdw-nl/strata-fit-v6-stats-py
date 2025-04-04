@@ -1,5 +1,4 @@
 from vantage6.algorithm.tools.mock_client import MockAlgorithmClient
-import pandas as pd
 from pprint import pprint
 import matplotlib.pyplot as plt
 
@@ -52,7 +51,8 @@ def plot_aggregated_lab_boxplots(agg_dict, safety_threshold=5):
                 "med": round(med, 2),
                 "q3": round(q3, 2),
                 "whishi": round(whishi, 2),
-                "mean": round(stats["mean"], 2)
+                "mean": round(stats["mean"], 2),
+                "fliers": []
             }
             boxplot_data.append(box_dict)
             labels.append(var)
@@ -88,7 +88,7 @@ org_ids = ids = [0,]
 client = MockAlgorithmClient(
     datasets = datasets,
     organization_ids=org_ids,
-    module='v6_basic_stats_py',
+    module='v6_strata_fit_stats_py',
     collaboration_id=None,
     node_ids=None
 )
@@ -98,7 +98,7 @@ org_ids = ids = [organization["id"] for organization in organizations]
 
 average_task = client.task.create(
     input_={
-        'method': 'flexible_stats',
+        'method': 'partial_stats',
         'kwargs': {}
     },
     organizations=[org_ids[0]]
@@ -108,11 +108,13 @@ results = client.result.get(average_task.get("id"))
 pprint(results)
 
 # Extract the aggregated lab values dictionary.
-agg_lab_values = results.get("Laboratory Values (Aggregated)", {})
+agg_lab_values = results.get("Laboratory Values (Grouped by pat_ID)", {})
 
-# Optionally, if the overall results also contain "total_patients", add it to agg_lab_values:
-if "total_patients" in results.get("Visits Per Time Period", {}):
-    agg_lab_values["total_patients"] = results["Visits Per Time Period"]["total_patients"]
+# Optionally, if you need the total_patients for the safety threshold:
+if "total_patients" not in agg_lab_values:
+    total_patients = results.get("Visits Per Time Period", {}).get("total_patients", None)
+    if total_patients is not None:
+        agg_lab_values["total_patients"] = total_patients
 
 
 fig = plot_aggregated_lab_boxplots(agg_lab_values, safety_threshold=5)

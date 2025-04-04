@@ -1,29 +1,43 @@
 import pandas as pd
 import numpy as np
-from vantage6.algorithm.tools.util import info
-from vantage6.algorithm.tools.decorators import data
+from typing import Any, Dict
 
-def unique_patients(df: pd.DataFrame, id_column="pat_ID"):
+from .types import (
+    enforce_output_schema,
+    UniquePatientsOutput,
+    VisitDefinitionOutput,
+    VisitsPerTimePeriodOutput,
+    MissingDataPerVisitOutput,
+    DemographicsOutput,
+    DiseaseDurationDistributionOutput,
+    PartialStatsOutput
+)
+
+# Define a privacy threshold: any count below this value is suppressed.
+PRIVACY_THRESHOLD = 5
+
+@enforce_output_schema(UniquePatientsOutput)
+def unique_patients(df: pd.DataFrame):
     """
     1. Unique Patients Per Center:
        Count the number of unique patient IDs.
+       If the count is below the privacy threshold, report "<{threshold}".
     """
-    return int(df[id_column].nunique())
+    count = int(df["pat_ID"].nunique())
+    if count < PRIVACY_THRESHOLD:
+        return f"<{PRIVACY_THRESHOLD}"
+    return {"unique_patients": count}
 
+@enforce_output_schema(VisitDefinitionOutput)
 def check_visit_definition(df: pd.DataFrame):
     """
     2. Check Visit Definition:
-       For each patient (grouped by pat_ID), first sort visits by 
-       'Visit_months_from_diagnosis'. Then, for each visit (after the first),
-       compare the current DMARD-related variables to the previous visit. 
-       Also, check if all disease activity variables are missing.
+       For each patient (grouped by pat_ID), sort visits by 'Visit_months_from_diagnosis'.
+       For each visit (after the first), compare DMARD-related variables to the previous visit 
+       and check if all disease activity variables are missing.
        
-       - DMARD-related columns: csDMARD1, csDMARD2, csDMARD3, bDMARD, tsDMARD, GC
-       - Disease activity columns: DAS28, ESR, CRP, TJC28, SJC28, Pat_global, Ph_global, Pain
-       
-       A visit is flagged as invalid if there is no change in DMARD values 
-       and all disease activity variables are missing. The function returns
-       the total count of such invalid visits.
+       Returns a dictionary with the total count of invalid visits.
+       (Note: The behavior when values are None is left as a TODO for clinical input.)
     """
     dmard_cols = ["csDMARD1", "csDMARD2", "csDMARD3", "bDMARD", "tsDMARD", "GC"]
     disease_activity_cols = ["DAS28", "ESR", "CRP", "TJC28", "SJC28", "Pat_global", "Ph_global", "Pain"]
@@ -34,28 +48,31 @@ def check_visit_definition(df: pd.DataFrame):
         for i in range(1, len(group)):
             current = group.iloc[i]
             previous = group.iloc[i - 1]
-            # TODO: address None issue - what if all records are equal or None?
-            dmard_unchanged = all(current[col] == previous[col] for col in dmard_cols if col in group.columns)
-            disease_missing = all(pd.isna(current[col]) or current[col] == "" for col in disease_activity_cols if col in group.columns)
+            # For DMARD columns, treat both values missing as "unchanged"
+            dmard_unchanged = all(
+                (pd.isna(current[col]) and pd.isna(previous[col])) or (current[col] == previous[col])
+                for col in dmard_cols if col in group.columns
+            )
+            disease_missing = all(pd.isna(current[col]) or current[col] == ""
+                                  for col in disease_activity_cols if col in group.columns)
             if dmard_unchanged and disease_missing:
                 invalid_count += 1
     return {"invalid_visits": invalid_count}
 
-
+@enforce_output_schema(VisitsPerTimePeriodOutput)
 def visits_per_time_period(df: pd.DataFrame):
     """
     3. Visits Per Time Period:
        For each patient, calculate:
          - Total number of visits.
-         - Total follow-up time (difference between last and first visit, 
-           using 'Visit_months_from_diagnosis').
+         - Total follow-up time (difference between last and first visit).
          - Visit rate = (number of visits) / (total follow-up time).
        
-       Returns:
-         - A dictionary of overall descriptive statistics (mean and standard deviation) of the visit rate.
+       Returns a dictionary of overall summary statistics (mean, std, median) of the visit rate,
+       along with the total patient count.
     """
     results = []
-    for pat_id, group in df.groupby("pat_ID"):
+    for _, group in df.groupby("pat_ID"):
         group = group.sort_values("Visit_months_from_diagnosis")
         visits_count = len(group)
         min_visit = group["Visit_months_from_diagnosis"].min()
@@ -68,25 +85,22 @@ def visits_per_time_period(df: pd.DataFrame):
         "visit_rate_mean": round(rates.mean(), 3) if not rates.empty else None,
         "visit_rate_std": round(rates.std(), 3) if not rates.empty else None,
         "visit_rate_median": round(rates.median(), 3) if not rates.empty else None,
-        # Q: do we need to return the counts again as we did it above?
         "total_patients": int(df["pat_ID"].nunique())
     }
     return overall_stats
 
-
+@enforce_output_schema(MissingDataPerVisitOutput)
 def missing_data_per_visit(df: pd.DataFrame):
     """
     4. Missing Data Per Feature:
        Check each visit to see if ALL key clinical/lab variables are missing.
-       The key variables include: DAS28, ESR, CRP, TJC28, SJC28, Pat_global, Ph_global, Pain.
        
        Returns a dictionary with:
-         - The count of visits with all missing values.
+         - Count of visits with all missing values.
          - Total number of visits.
-         - The percentage of such visits.
+         - Percentage of such visits.
     """
     cols = ["DAS28", "ESR", "CRP", "TJC28", "SJC28", "Pat_global", "Ph_global", "Pain"]
-    # Create a temporary flag column to check if all are missing
     all_missing = df[cols].apply(lambda row: all(pd.isna(x) or x == "" for x in row), axis=1)
     count_missing = all_missing.sum()
     total = len(df)
@@ -97,13 +111,33 @@ def missing_data_per_visit(df: pd.DataFrame):
         "percent_all_missing": percent_missing
     }
 
+def safe_counts_and_proportions_groupwise(counts: Dict[Any, int], threshold=PRIVACY_THRESHOLD):
+    """
+    Masks *all* counts and proportions if any group has a count below the threshold.
 
+    Returns:
+        safe_counts: Dict[Any, Union[int, str]]
+        safe_proportions: Dict[Any, Union[float, str]]
+    """
+    if any(v < threshold for v in counts.values()):
+        return (
+            {k: f"<{threshold}" for k in counts},
+            {k: "masked" for k in counts}
+        )
+
+    total = sum(counts.values())
+    safe_counts = {k: v for k, v in counts.items()}
+    safe_proportions = {k: round(v / total, 3) if total > 0 else None for k, v in counts.items()}
+    return safe_counts, safe_proportions
+
+
+@enforce_output_schema(DemographicsOutput)
 def demographics_stats(df: pd.DataFrame):
     """
     5. Demographics:
-       For continuous variables (e.g. Age), compute mean and standard deviation.
-       For categorical variables (e.g. Sex, RF_positivity, anti_CCP), compute counts
-       and proportions.
+       For continuous variables (e.g. Age), compute mean and std.
+       For categorical variables (e.g. Sex, RF_positivity, anti_CCP), compute counts and proportions.
+       Small counts (below threshold) are suppressed for privacy.
        
        Returns a dictionary of computed statistics.
     """
@@ -112,22 +146,21 @@ def demographics_stats(df: pd.DataFrame):
     if "Age" in df.columns:
         results["Age_mean"] = round(df["Age"].mean(), 2)
         results["Age_std"] = round(df["Age"].std(), 2)
+    
     # Categorical variables
     for var in ["Sex", "RF_positivity", "anti_CCP"]:
-        # Q: maybe it is unsafe to display count here as they can disclose patient-level data?
         if var in df.columns:
-            counts = df[var].value_counts(dropna=False)
-            total = counts.sum()
-            proportions = (counts / total).round(3).to_dict()
-            results[f"{var}_counts"] = counts.to_dict()
-            results[f"{var}_proportions"] = proportions
+            counts = df[var].value_counts(dropna=False).to_dict()
+            safe_counts, safe_proportions = safe_counts_and_proportions_groupwise(counts)
+            results[f"{var}_counts"] = safe_counts
+            results[f"{var}_proportions"] = safe_proportions
     return results
 
+@enforce_output_schema(DiseaseDurationDistributionOutput)
 def disease_duration_distribution(df: pd.DataFrame):
     """
     6. Disease Duration Distribution:
-       Compute the distribution of the diagnosis year (or a proxy for disease duration).
-       Returns the mean, standard deviation, and skewness of the Year_diagnosis variable.
+       Compute the distribution (mean, std, skewness) of the Year_diagnosis variable.
     """
     if "Year_diagnosis" in df.columns:
         diagnosis_year = pd.to_numeric(df["Year_diagnosis"], errors='coerce')
@@ -140,6 +173,10 @@ def disease_duration_distribution(df: pd.DataFrame):
         return {}
 
 def lab_values_stats_overall(df: pd.DataFrame):
+    """
+    7a. Laboratory Values (Overall):
+       Compute overall descriptive statistics for lab variables.
+    """
     lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
     results = {}
     for var in lab_vars:
@@ -148,7 +185,6 @@ def lab_values_stats_overall(df: pd.DataFrame):
             mean_val = series.mean()
             std_val = series.std()
             skewness_val = series.skew()
-            # Identify outliers using the IQR method
             Q1 = series.quantile(0.25)
             Q3 = series.quantile(0.75)
             IQR = Q3 - Q1
@@ -164,7 +200,10 @@ def lab_values_stats_overall(df: pd.DataFrame):
     return results
 
 def lab_values_stats_aggregated(df: pd.DataFrame):
-    # This function aggregates lab values by patient then summarizes those aggregates
+    """
+    7b. Laboratory Values (Aggregated):
+       Aggregate lab values by patient and summarize those aggregates.
+    """
     if "pat_ID" not in df.columns:
         raise ValueError("Grouping requested but 'pat_ID' column not found.")
     lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
@@ -172,7 +211,6 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
     results = {}
     for var in lab_vars:
         if var in df.columns:
-            # Compute per-patient means
             means = grouped[var].mean().dropna()
             results[var] = {
                 "mean": round(means.mean(), 2),
@@ -183,9 +221,8 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
             }
     return results
 
-
-@data(1)
-def flexible_stats(df: pd.DataFrame, **kwargs):
+@enforce_output_schema(PartialStatsOutput)
+def compute_partial_stats(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Aggregates various statistics for the dataset while preserving privacy.
     Calls individual functions for:
@@ -195,7 +232,7 @@ def flexible_stats(df: pd.DataFrame, **kwargs):
       4. Missing Data Per Visit
       5. Demographics
       6. Disease Duration Distribution
-      7. Laboratory Values (both overall and grouped by pat_ID)
+      7. Laboratory Values (Overall and Aggregated)
       
     Returns a dictionary with all computed results.
     """
@@ -207,17 +244,16 @@ def flexible_stats(df: pd.DataFrame, **kwargs):
     duration = disease_duration_distribution(df)
     lab_overall = lab_values_stats_overall(df)
     lab_grouped = lab_values_stats_aggregated(df)
-    
+
     results = {
-        "Unique Patients Per Center": unique,
-        "Check Visit Definition (invalid visits count)": visit_def,
-        "Visits Per Time Period": visits_overall,
-        "Missing Data Per Visit": missing_data,
-        "Demographics": demographics,
-        "Disease Duration Distribution": duration,
-        "Laboratory Values (Overall)": lab_overall,
-        "Laboratory Values (Grouped by pat_ID)": lab_grouped
+        "unique_patients_per_center": unique,
+        "check_visit_definition": visit_def,
+        "visits_per_time_period": visits_overall,
+        "missing_data_per_visit": missing_data,
+        "demographics": demographics,
+        "disease_duration_distribution": duration,
+        "laboratory_values_overall": lab_overall,
+        "laboratory_values_grouped_by_pat_id": lab_grouped
     }
-    
-    info(results)
+
     return results
