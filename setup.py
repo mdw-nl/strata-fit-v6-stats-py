@@ -22,6 +22,7 @@ setup(
     install_requires=[
         'vantage6-algorithm-tools',
         'pandas'
+        'pydantic'
     ],
     extras_require={
         "test": [
