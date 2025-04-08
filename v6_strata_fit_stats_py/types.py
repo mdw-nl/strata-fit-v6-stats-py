@@ -4,7 +4,8 @@ from typing import Dict, Union, Optional, Any
 
 def enforce_output_schema(model: BaseModel):
     """
-    A decorator that validates the output of a function against a Pydantic model.
+    Decorator to validate output against a Pydantic model.
+    Sanitizes validation errors to avoid leaking sensitive node data.
     """
     def decorator(func):
         @wraps(func)
@@ -13,9 +14,26 @@ def enforce_output_schema(model: BaseModel):
             try:
                 validated = model.model_validate(result)
             except ValidationError as e:
-                raise ValueError(f"Output validation error in {func.__name__}: {e}")
+
+                # Extract field name only (first in the error array) and no value
+                error_locations = set(
+                    str(err.get("loc", [])[0]) if err.get("loc") else "unknown_field"
+                    for err in e.errors()
+                )
+
+
+                safe_error_message = (
+                    f"Validation error in function '{func.__name__}' "
+                    f"while validating model '{model.__name__}'. "
+                    f"Issue detected in fields: {', '.join(error_locations) or 'unknown fields'}."
+                )
+
+                raise ValueError(safe_error_message) from None
+
             return validated.model_dump()
+
         return wrapper
+
     return decorator
 
 # ------------------------------
