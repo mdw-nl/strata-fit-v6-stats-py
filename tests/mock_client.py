@@ -32,15 +32,16 @@ def plot_aggregated_lab_boxplots(agg_dict, safety_threshold=5):
     """
     boxplot_data = []
     labels = []
+    print(agg_dict)
     
     for var, stats in agg_dict.items():
         # Skip entries that are not dictionaries (e.g., total_patients)
         if not isinstance(stats, dict):
             continue
-        if all(k in stats for k in ["25%", "median", "75%", "mean"]):
-            q1 = stats["25%"]
+        if all(k in stats for k in ["Q1", "median", "Q3", "mean"]):
+            q1 = stats["Q1"]
             med = stats["median"]
-            q3 = stats["75%"]
+            q3 = stats["Q3"]
             IQR = q3 - q1
             whislo = q1 - 1.5 * IQR
             whishi = q3 + 1.5 * IQR
@@ -108,7 +109,7 @@ results = client.result.get(average_task.get("id"))
 pprint(results)
 
 # Extract the aggregated lab values dictionary.
-agg_lab_values = results.get("Laboratory Values (Grouped by pat_ID)", {})
+agg_lab_values = results.get("laboratory_values_grouped_by_pat_id", {})
 
 # Optionally, if you need the total_patients for the safety threshold:
 if "total_patients" not in agg_lab_values:

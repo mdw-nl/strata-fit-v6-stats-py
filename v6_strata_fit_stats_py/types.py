@@ -17,7 +17,7 @@ def enforce_output_schema(model: BaseModel):
 
                 # Extract field name only (first in the error array) and no value
                 error_locations = set(
-                    str(err.get("loc", [])[0]) if err.get("loc") else "unknown_field"
+                    f"Error type: {err['type']}, error location: {err.get('loc', [])[0]}" if err.get('loc') else 'unknown_field'
                     for err in e.errors()
                 )
 
@@ -25,7 +25,7 @@ def enforce_output_schema(model: BaseModel):
                 safe_error_message = (
                     f"Validation error in function '{func.__name__}' "
                     f"while validating model '{model.__name__}'. "
-                    f"Issue detected in fields: {', '.join(error_locations) or 'unknown fields'}."
+                    f"Issue detected in fields: \n\t{'\n\t'.join(error_locations) or 'unknown fields'}."
                 )
 
                 raise ValueError(safe_error_message) from None
@@ -85,8 +85,8 @@ class LabValueAggregated(BaseModel):
     mean: float
     std: float
     median: float
-    Q1: float = Field(..., alias="25%")
-    Q3: float = Field(..., alias="75%")
+    Q1: float
+    Q3: float
 
 class LabValueOverallOutput(BaseModel):
     CRP: LabValueOverall

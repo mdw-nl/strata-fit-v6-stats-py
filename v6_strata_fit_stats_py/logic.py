@@ -225,8 +225,8 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
                 "mean": round(means.mean(), 2),
                 "std": round(means.std(), 2),
                 "median": round(means.median(), 2),
-                "25%": round(means.quantile(0.25), 2),
-                "75%": round(means.quantile(0.75), 2)
+                "Q1": round(means.quantile(0.25), 2),
+                "Q3": round(means.quantile(0.75), 2)
             }
     return results
 
