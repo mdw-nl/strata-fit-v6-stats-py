@@ -32,7 +32,6 @@ def plot_aggregated_lab_boxplots(agg_dict, safety_threshold=5):
     """
     boxplot_data = []
     labels = []
-    print(agg_dict)
     
     for var, stats in agg_dict.items():
         # Skip entries that are not dictionaries (e.g., total_patients)
