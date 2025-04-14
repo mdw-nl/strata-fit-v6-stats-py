@@ -29,8 +29,27 @@ def enforce_output_schema(model: BaseModel):
                 )
 
                 raise ValueError(safe_error_message) from None
+            
+            # Handle unexpected exceptions here
+            except Exception as e:
+                safe_error_message = (
+                    f"Validation of model '{model.__name__}' failed unexpectedly "
+                    f"during the run of function '{func.__name__}'. "
+                    f"Error type is '{type(e)}', error message is hidden for security reasons."
+                )
+                raise Exception(safe_error_message) from None
 
-            return validated.model_dump()
+            # Handle potential serialization errors
+            try:
+                return validated.model_dump()
+            except Exception as e:
+                safe_error_message = (
+                    f"Data dump for model '{model.__name__}' failed unexpectedly "
+                    f"during the run of function '{func.__name__}'. "
+                    f"Error type is '{type(e)}', error message is hidden for security reasons."
+                )
+                raise Exception(safe_error_message) from None
+
 
         return wrapper
 
