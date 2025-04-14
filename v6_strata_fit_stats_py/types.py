@@ -22,10 +22,11 @@ def enforce_output_schema(model: BaseModel):
                 )
 
 
+                separator = "\n\t"
                 safe_error_message = (
                     f"Validation error in function '{func.__name__}' "
                     f"while validating model '{model.__name__}'. "
-                    f"Issue detected in fields: \n\t{'\n\t'.join(error_locations) or 'unknown fields'}."
+                    f"Issue detected in fields: \n\t{separator.join(error_locations) or 'unknown fields'}."
                 )
 
                 raise ValueError(safe_error_message) from None
