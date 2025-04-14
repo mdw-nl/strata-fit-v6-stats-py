@@ -82,10 +82,10 @@ class DemographicsOutput(BaseModel):
     Age_std: float
     Sex_counts: Dict[Union[int, str], Union[int, str]]
     Sex_proportions: Dict[Union[int, str], Union[float, str]]
-    RF_positivity_counts: Dict[Union[int, str], Union[int, str]]
-    RF_positivity_proportions: Dict[Union[int, str], Union[float, str]]
-    anti_CCP_counts: Dict[Union[int, str], Union[int, str]]
-    anti_CCP_proportions: Dict[Union[int, str], Union[float, str]]
+    RF_positivity_counts: Dict[Union[int, str, float], Union[int, str]]
+    RF_positivity_proportions: Dict[Union[int, str, float], Union[float, str]]
+    anti_CCP_counts: Dict[Union[int, str, float], Union[int, str]]
+    anti_CCP_proportions: Dict[Union[int, str, float], Union[float, str]]
 
 class DiseaseDurationDistributionOutput(BaseModel):
     Year_diagnosis_mean: float
