@@ -4,7 +4,8 @@ from typing import Dict, Union, Optional, Any
 
 def enforce_output_schema(model: BaseModel):
     """
-    A decorator that validates the output of a function against a Pydantic model.
+    Decorator to validate output against a Pydantic model.
+    Sanitizes validation errors to avoid leaking sensitive node data.
     """
     def decorator(func):
         @wraps(func)
@@ -13,9 +14,45 @@ def enforce_output_schema(model: BaseModel):
             try:
                 validated = model.model_validate(result)
             except ValidationError as e:
-                raise ValueError(f"Output validation error in {func.__name__}: {e}")
-            return validated.model_dump()
+
+                # Extract field name only (first in the error array) and no value
+                error_locations = set(
+                    f"Error type: {err['type']}, error location: {err.get('loc', [])[0]}" if err.get('loc') else 'unknown_field'
+                    for err in e.errors()
+                )
+
+
+                safe_error_message = (
+                    f"Validation error in function '{func.__name__}' "
+                    f"while validating model '{model.__name__}'. "
+                    f"Issue detected in fields: \n\t{'\n\t'.join(error_locations) or 'unknown fields'}."
+                )
+
+                raise ValueError(safe_error_message) from None
+            
+            # Handle unexpected exceptions here
+            except Exception as e:
+                safe_error_message = (
+                    f"Validation of model '{model.__name__}' failed unexpectedly "
+                    f"during the run of function '{func.__name__}'. "
+                    f"Error type is '{type(e)}', error message is hidden for security reasons."
+                )
+                raise Exception(safe_error_message) from None
+
+            # Handle potential serialization errors
+            try:
+                return validated.model_dump()
+            except Exception as e:
+                safe_error_message = (
+                    f"Data dump for model '{model.__name__}' failed unexpectedly "
+                    f"during the run of function '{func.__name__}'. "
+                    f"Error type is '{type(e)}', error message is hidden for security reasons."
+                )
+                raise Exception(safe_error_message) from None
+
+
         return wrapper
+
     return decorator
 
 # ------------------------------
@@ -67,8 +104,8 @@ class LabValueAggregated(BaseModel):
     mean: float
     std: float
     median: float
-    Q1: float = Field(..., alias="25%")
-    Q3: float = Field(..., alias="75%")
+    Q1: float
+    Q3: float
 
 class LabValueOverallOutput(BaseModel):
     CRP: LabValueOverall
