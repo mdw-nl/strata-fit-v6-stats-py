@@ -143,9 +143,12 @@ def demographics_stats(df: pd.DataFrame):
     """
     results = {}
     # Continuous variable: Age_diagnosis
-    if "Age_diagnosis" in df.columns:
-        results["Age_mean"] = round(df["Age_diagnosis"].mean(), 2)
-        results["Age_std"] = round(df["Age_diagnosis"].std(), 2)
+    age_column_name = "Age_diagnosis"
+    if age_column_name in df.columns:
+        results["Age_mean"] = round(df[age_column_name].mean(), 2)
+        results["Age_std"] = round(df[age_column_name].std(), 2)
+    else:
+        raise KeyError(f'Column "{age_column_name}" is not present in the dataset - review the data schema adherence!')
     
     # Categorical variables
     for var in ["Sex", "RF_positivity", "anti_CCP"]:
@@ -154,6 +157,9 @@ def demographics_stats(df: pd.DataFrame):
             safe_counts, safe_proportions = safe_counts_and_proportions_groupwise(counts)
             results[f"{var}_counts"] = safe_counts
             results[f"{var}_proportions"] = safe_proportions
+        else:
+            raise KeyError(f'Column "{var}" is not present in the dataset - review the data schema adherence!')
+    
     return results
 
 @enforce_output_schema(DiseaseDurationDistributionOutput)
@@ -163,22 +169,28 @@ def disease_duration_distribution(df: pd.DataFrame):
        Compute the distribution (mean, std, skewness) of the Year_diagnosis variable.
        Note: Deduplicates per patient before computing stats.
     """
-    if "Year_diagnosis" in df.columns and "pat_ID" in df.columns:
+    year_column = "Year_diagnosis"
+    groupping_column = "pat_ID"
+    if year_column in df.columns and groupping_column in df.columns:
         # Group by patient and take the first non-null value
         patient_level = (
-            df.dropna(subset=["Year_diagnosis"])
-              .groupby("pat_ID")["Year_diagnosis"]
+            df.dropna(subset=[year_column])
+              .groupby(groupping_column)[year_column]
               .first()
               .apply(pd.to_numeric, errors="coerce")
               .dropna()
         )
         return {
-            "Year_diagnosis_mean": round(patient_level.mean(), 2),
-            "Year_diagnosis_std": round(patient_level.std(), 2),
-            "Year_diagnosis_skewness": round(patient_level.skew(), 2)
+            f"{year_column}_mean": round(patient_level.mean(), 2),
+            f"{year_column}_std": round(patient_level.std(), 2),
+            f"{year_column}_skewness": round(patient_level.skew(), 2)
         }
     else:
-        return {}
+        error_message = (
+            f'Columns "{year_column}" and "{groupping_column}" are '
+            'not present in the dataset - review the data schema adherence!'
+        )
+        raise KeyError(error_message)
 
 
 def lab_values_stats_overall(df: pd.DataFrame):
@@ -188,6 +200,7 @@ def lab_values_stats_overall(df: pd.DataFrame):
     """
     lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
     results = {}
+    missing_columns = []
     for var in lab_vars:
         if var in df.columns:
             series = pd.to_numeric(df[var], errors='coerce')
@@ -206,6 +219,14 @@ def lab_values_stats_overall(df: pd.DataFrame):
                 "skewness": round(skewness_val, 2),
                 "outlier_count": len(outliers)
             }
+        else:
+            missing_columns.append(var)
+    if missing_columns:
+        error_message = (
+            f'Columns {missing_columns} are '
+            'not present in the dataset - review the data schema adherence!'
+        )
+        raise KeyError(error_message)
     return results
 
 def lab_values_stats_aggregated(df: pd.DataFrame):
@@ -216,6 +237,7 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
     if "pat_ID" not in df.columns:
         raise ValueError("Grouping requested but 'pat_ID' column not found.")
     lab_vars = ["CRP", "ESR", "TJC28", "SJC28", "DAS28", "Pat_global", "Ph_global", "Pain"]
+    missing_columns = []
     grouped = df.groupby("pat_ID")
     results = {}
     for var in lab_vars:
@@ -228,10 +250,18 @@ def lab_values_stats_aggregated(df: pd.DataFrame):
                 "Q1": round(means.quantile(0.25), 2),
                 "Q3": round(means.quantile(0.75), 2)
             }
+        else:
+            missing_columns.append(var)
+    if missing_columns:
+        error_message = (
+            f'Columns {missing_columns} are '
+            'not present in the dataset - review the data schema adherence!'
+        )
+        raise KeyError(error_message)
     return results
 
 @enforce_output_schema(PartialStatsOutput)
-def compute_partial_stats(df: pd.DataFrame) -> Dict[str, Any]:
+def compute_partial_stats(df: pd.DataFrame):
     """
     Aggregates various statistics for the dataset while preserving privacy.
     Calls individual functions for:

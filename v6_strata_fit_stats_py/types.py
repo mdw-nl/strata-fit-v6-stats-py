@@ -1,6 +1,7 @@
 from functools import wraps
 from pydantic import BaseModel, ValidationError, Field
 from typing import Dict, Union, Optional, Any
+from vantage6.algorithm.tools.util import info
 
 def enforce_output_schema(model: BaseModel):
     """
@@ -10,9 +11,12 @@ def enforce_output_schema(model: BaseModel):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
+            info(f"Starting computation in function: '{func.__name__}'.")
             result = func(*args, **kwargs)
+            info(f"Finished computation in function: '{func.__name__}'.")
             try:
                 validated = model.model_validate(result)
+                info(f"Validated output of the function '{func.__name__}' adherence to model '{model.__name__}'.")
             except ValidationError as e:
 
                 # Extract field name only (first in the error array) and no value
@@ -42,7 +46,8 @@ def enforce_output_schema(model: BaseModel):
 
             # Handle potential serialization errors
             try:
-                return validated.model_dump()
+                dumped_validated_results =  validated.model_dump()
+                return dumped_validated_results
             except Exception as e:
                 safe_error_message = (
                     f"Data dump for model '{model.__name__}' failed unexpectedly "
