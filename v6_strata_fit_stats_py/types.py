@@ -12,7 +12,15 @@ def enforce_output_schema(model: BaseModel):
         @wraps(func)
         def wrapper(*args, **kwargs):
             info(f"Starting computation in function: '{func.__name__}'.")
-            result = func(*args, **kwargs)
+            try:
+                result = func(*args, **kwargs)
+            except Exception as e:
+                safe_error_message = (
+                    f"During the run of function '{func.__name__}'. "
+                    f"Error type is '{type(e)}', error message is hidden for security reasons."
+                )
+                info(safe_error_message)
+                return
             info(f"Finished computation in function: '{func.__name__}'.")
             try:
                 validated = model.model_validate(result)
